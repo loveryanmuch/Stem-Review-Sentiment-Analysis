@@ -1,40 +1,89 @@
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense, Dropout, GlobalAveragePooling1D
-
-# Convert integer sequences to a numpy array
+from transformers import pipeline, BertTokenizer, TFBertModel, TFBertForSequenceClassification
+from tensorflow.keras.optimizers import Adam
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
 import numpy as np
-input_ids = np.array(tokens['input_ids'])
-attention_masks = np.array(tokens['attention_mask'])
+import tensorflow as tf
+import pandas as pd
 
-X_train, X_test, y_train, y_test = train_test_split(
-    input_ids, 
-    df['sentiment_label'], 
-    test_size=0.2, 
-    random_state=42
-)
+# Load dataset
+df = pd.read_csv("C:\\Users\\17789\\LHL\\Stem-Review-Sentiment-Analysis\\Data\\dataset.csv")
 
-# Load the BERT model
-bert = TFBertModel.from_pretrained('bert-base-uncased')
+# Load a pre-trained sentiment analysis pipeline
+sentiment_pipeline = pipeline('sentiment-analysis')
 
-# Build the model
-input_ids = Input(shape=(50,), dtype='int32', name='input_ids')
-attention_masks = Input(shape=(50,), dtype='int32', name='attention_masks')
+def label_reviews(reviews):
+    labeled_reviews = []
+    for review in reviews:
+        result = sentiment_pipeline(review)[0]
+        label = 1 if result['label'] == 'POSITIVE' else 0  # Assuming binary classification for simplicity
+        labeled_reviews.append((review, label))
+    return labeled_reviews
 
-bert_output = bert(input_ids, attention_mask=attention_masks)[1]
-dropout = Dropout(0.3)(bert_output)
-output = Dense(3, activation='softmax')(dropout) # Assuming 3 classes: positive, negative, neutral
+# Assuming 'df' is your DataFrame and 'review' is the column with text data
+labeled_data = label_reviews(df['review'].tolist())
+labeled_df = pd.DataFrame(labeled_data, columns=['review', 'sentiment'])
 
-model = Model(inputs=[input_ids, attention_masks], outputs=output)
+# Initialize BERT tokenizer and model
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+bert_model = TFBertModel.from_pretrained('bert-base-uncased')
+
+def encode_reviews(reviews, tokenizer, max_length=128):
+    encoded = tokenizer.batch_encode_plus(
+        reviews, 
+        max_length=max_length, 
+        padding='max_length', 
+        truncation=True,
+        return_attention_mask=True
+    )
+    return encoded
+
+def extract_bert_embeddings(encoded, model):
+    input_ids = np.array(encoded['input_ids'])
+    attention_mask = np.array(encoded['attention_mask'])
+
+    # Get the embeddings from the last hidden state
+    with tf.GradientTape() as tape:
+        embeddings = model(input_ids, attention_mask=attention_mask)[0][:,0,:].numpy()
+    return embeddings
+
+# Encode and extract embeddings
+encoded_reviews = encode_reviews(labeled_df['review'].tolist(), tokenizer)
+embeddings = extract_bert_embeddings(encoded_reviews, bert_model)
+
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(embeddings, labeled_df['sentiment'], test_size=0.2, random_state=42)
+
+# Initialize and train a logistic regression model
+lr_model = LogisticRegression(max_iter=1000)
+lr_model.fit(X_train, y_train)
+
+# Evaluate the model
+accuracy = lr_model.score(X_test, y_test)
+print(f"Model Accuracy: {accuracy}")
+
+# Load the BERT model for sequence classification
+model = TFBertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)  # Assuming 3 classes: positive, negative, neutral
 
 # Compile the model
-model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+optimizer = Adam(learning_rate=3e-5)
+model.compile(optimizer=optimizer, loss=model.compute_loss, metrics=['accuracy'])
 
-model.fit(
-    [X_train, attention_masks[:len(X_train)]], 
-    y_train, 
-    batch_size=32, 
-    validation_split=0.1, 
-    epochs=3
-)
+# Prepare training data (assuming you have X_train, y_train, X_val, y_val prepared)
+train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(len(X_train)).batch(32)
+val_dataset = tf.data.Dataset.from_tensor_slices((X_val, y_val)).batch(32)
 
-model.evaluate([X_test, attention_masks[len(X_train):]], y_test)
+# Train the model
+model.fit(train_dataset, epochs=3, validation_data=val_dataset)
+
+# Predict on test set
+y_pred = model.predict(X_test).logits
+y_pred = np.argmax(y_pred, axis=1)
+
+# Compute metrics
+print(classification_report(y_test, y_pred, target_names=['negative', 'neutral', 'positive']))
+
+# Confusion Matrix
+conf_mat = confusion_matrix(y_test, y_pred)
+print(conf_mat)
