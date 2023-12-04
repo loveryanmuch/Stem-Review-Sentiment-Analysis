@@ -19,7 +19,7 @@ def classify_review(review):
     return 1 if result['label'] == 'POSITIVE' else 0
 
 # Apply the classification function
-df['sentiment'] = df['review_text'].apply(classify_review)
+df['sentiment'] = df['cleaned_review_text'].apply(classify_review)
 
 # Initialize BERT tokenizer
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -69,4 +69,13 @@ y_pred = np.argmax(y_pred, axis=1)
 print(classification_report(y_test, y_pred, target_names=['NEGATIVE', 'POSITIVE']))
 print(confusion_matrix(y_test, y_pred))
 
-Modeling.save("C:\\Users\\17789\\LHL\\Stem-Review-Sentiment-Analysis\\Data\\Modeling.csv")
+bert_model.save("C:\\Users\\17789\\LHL\\Stem-Review-Sentiment-Analysis\\Data\\bert_model.csv")
+
+
+# Filter the DataFrame to include only rows where the sentiment is 'POSITIVE' or 'NEGATIVE'
+    reviews_df = reviews_df[reviews_df['sentiment'].isin(['POSITIVE', 'NEGATIVE'])]
+
+    # Map the sentiment labels to a binary target variable
+    # 'POSITIVE': 1, 'NEGATIVE': 0
+    target_map = {'POSITIVE': 1, 'NEGATIVE': 0}
+    reviews_df['target'] = reviews_df['sentiment'].map(target_map)
