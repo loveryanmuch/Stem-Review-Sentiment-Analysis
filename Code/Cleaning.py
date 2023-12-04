@@ -59,7 +59,7 @@ if __name__ == "__main__":
         exit()
 
     # Preprocessing
-    reviews_df = reviews_df[['review_text', 'review_score']]
+    reviews_df = reviews_df[['app_id', 'app_name', 'review_text', 'review_score']]
     reviews_df.dropna(subset=['review_text'], inplace=True)
 
     stop_words = set(stopwords.words('english'))
@@ -73,5 +73,4 @@ if __name__ == "__main__":
     reviews_df_filtered = remove_length_outliers(reviews_df)
 
     # Save the filtered data
-    filtered_data_path = join(dirname(abspath(__file__)), "Data", "Filtered_data.csv")
-    reviews_df_filtered.to_csv(filtered_data_path, index=False)
+    reviews_df_filtered.to_csv("C:\\Users\\17789\\LHL\\Stem-Review-Sentiment-Analysis\\Data\\cleaned_dataset.csv", index=False)
